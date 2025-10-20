@@ -1,0 +1,1625 @@
+---
+title: "tarea 1"
+author: "Lisa Naomi Andrade Hurtado"
+format: html
+editor: visual
+---
+
+```{r}
+#| code-fold: true
+#| warning: false
+#| message: false
+
+library(tidyverse)
+library(sf)          # Para datos espaciales
+library(viridis)     # Para paletas de colores
+library(janitor)    # Para limpiar nombres de columnas
+library(scales)     # Para mejorar ejes en gráficos
+
+```
+
+# Objetivo
+
+El objetivo de este documento es realizar un análisis exploratorio de datos (EDA) utilizando técnicas de estadística descriptiva y visualización gráfica. Nos enfocaremos en variables cuantitativas, una a la vez, aplicando diversas representaciones gráficas para comprender mejor la distribución y características de los datos.
+
+Uno de los primeros temas que exploraremos en la estadística inferencial será la estimación de parametros, por lo que es fundamental entender cómo se comportan las variables en una muestra.
+
+# Datos espaciales de nayarit
+
+```{r municipios}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+municipios_nayarit <- st_read("data/18mun.shp", options = "ENCODING=LATIN1", quiet = TRUE)
+
+# Crear mapa de municipios de nayarit
+mapa_municipios <- ggplot(municipios_nayarit) +
+  geom_sf(fill = "cadetblue", color = "white", size = 0.3) +
+  labs(
+    title = "Municipios de nayarit",
+    subtitle = paste("Total de municipios:", nrow(municipios_nayarit)),
+    caption = "Fuente: INEGI - Marco Geoestadístico"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    plot.caption = element_text(size = 18)
+  )
+
+print(mapa_municipios)
+```
+
+# Fuente de datos: INEGI
+
+Para este ejemplo, utilizaremos los datos del **Instituto Nacional de Estadística y Geografía (INEGI)** de México. Específicamente, los Censos y Conteos de Población y Vivienda disponible en:
+
+**Enlace de descarga**: https://inegi.org.mx/app/descarga/
+
+Buscar: Estado. Seleccionar: Programas \> Censos y Conteos de Población y Vivienda \> 2020 \> Indicadores 1900-2020 y descargar el archivo CSV.
+
+Extraer el archivo `cpv_valor_14.csv` y guardarlo en la carpeta `data/`.
+
+# Lectura de datos
+
+Carguemos los datos de población y vivienda para el año 2020, filtrando por algunos indicadores relevantes:
+
+-   Hogares con jefatura femenina
+-   Hogares con jefatura masculina
+-   Tamaño promedio de los hogares con jefe mujer
+-   Tamaño promedio de los hogares con jefe hombre
+-   Relación hombres - mujeres
+-   Relación de dependencia
+
+```{r}
+#| code-fold: true
+#| warning: false
+#| message: false
+
+datos_total <- read_csv("data/cpv_valor_18.csv", na = c("ND"))
+
+datos_total <- datos_total |> filter(año == 2020)
+#unique(datos_total$indicador)
+datos_seleccion <- datos_total |> 
+  filter(indicador %in% c("Hogares con jefatura femenina","Hogares con jefatura masculina", "Tamaño promedio de los hogares con jefe mujer", "Tamaño promedio de los hogares con jefe hombre", "Relación hombres-mujeres", "Relación de dependencia"), desc_municipio != "Estatal") |> 
+  select(desc_municipio, indicador, valor)
+```
+
+Cambiamos el formato de los datos para que cada indicador sea una columna separada, facilitando el análisis posterior. Además, limpiamos los nombres de las columnas para que sean más manejables y creamos una columna `NOMGEO` para poder unir los datos espaciales con los datos de población y vivienda.
+
+```{r}
+#| code-fold: true
+#| warning: false
+#| message: false
+
+datos <- datos_seleccion |>
+    pivot_wider(names_from = indicador, values_from = valor) 
+
+datos <- datos |> 
+  clean_names() 
+
+# Corrección de nombres de municipios
+
+datos <- datos |> 
+  mutate(desc_municipio = if_else(desc_municipio == "EL Arenal", "El Arenal", desc_municipio))
+
+datos <- datos |> 
+  mutate(NOMGEO = desc_municipio)
+```
+
+# Estadísticas descriptivas
+
+Ahora que tenemos nuestros datos preparados, podemos realizar un resumen numérico de las variables cuantitativas. Para ello, utilizaremos la función `summary()` de R, que nos proporcionará un resumen estadístico de cada variable, incluyendo la media, mediana, mínimo, máximo y cuartiles. Hay que agregar las demás medidas de dispersión analizadas en clase (desviación media, varianza, rango, etc.) para cada variable cuantitativa.
+
+```{r}
+#| code-fold: true
+
+summary(datos)
+```
+
+Se unen los datos geograficos de los municipios de nayarit con los datos de población y vivienda. Esto nos permitirá crear mapas y realizar análisis espaciales. Para preservar la integridad de los datos, utilizamos `left_join()` de `dplyr`, el primer conjunto de datos debe ser el que contenga la columna `geometry`.
+
+```{r}
+#| code-fold: true
+
+datos <- left_join(municipios_nayarit, datos)
+```
+
+```{r setup}
+#| warning: false
+#| message: false
+#| code-fold: true
+
+# Cargar librerías
+library(tidyverse)    # Para manipulación de datos
+library(sf)          # Para datos espaciales
+library(viridis)     # Para paletas de colores
+
+# Configurar tema para los mapas
+theme_set(theme_minimal())
+```
+
+# Hogares con jefatura femenina
+
+```{r}
+#| code-fold: true
+#| fig-width: 8
+#| fig-align: center
+
+
+ggplot(datos) +
+  geom_sf(aes(fill = hogares_con_jefatura_femenina), color = "white", size = 0.1) +
+  scale_fill_viridis_c(
+    name = "Hogares con jefatura femenina"
+  ) +
+  labs(
+    title = "Hogares con jefatura femenina de los Municipios de nayarit",
+    caption = "Fuente: INEGI - Marco Geoestadístico"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    plot.caption = element_text(size = 18),
+    legend.position = "right"
+  )
+
+```
+
+## Histograma
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(datos) +
+  geom_histogram(aes(hogares_con_jefatura_femenina), color="black", fill = "pink3", boundary=min(datos$hogares_con_jefatura_femenina), binwidth = 1800) +
+  labs(
+    title = "Hogares con jefatura femenina",
+    x = "Hogares", y = "Frecuencia"
+  ) +
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13)
+  )
+
+```
+
+## Gráfica de densidad
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(datos) +
+  geom_density(aes(hogares_con_jefatura_femenina), color="black", fill = "rosybrown1", alpha=0.6) +
+  labs(
+    title = "Distribución de los Hogares con jefatura femenina",
+    x = "Hogares", y = "Densidad"
+  ) +
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13)
+  )
+
+
+```
+
+## Boxplot
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(data = datos, aes(x = "", y = hogares_con_jefatura_femenina)) +
+    geom_boxplot(
+    fill = "lightblue2",           # Color de relleno
+    color = "cyan4",          # Color del borde más oscuro
+    alpha = 0.8,                # Transparencia
+    outlier.color = "hotpink",  # Color rojo para outliers
+    outlier.size = 2.5,         # Tamaño de outliers
+    outlier.alpha = 0.7,        # Transparencia de outliers
+    width = 0.5,                # Ancho del boxplot
+    notch = TRUE,               # Muescas para intervalo de confianza
+    notchwidth = 0.7            # Ancho de las muescas
+  ) +
+  geom_jitter(alpha = 0.3, color = "black", size = 1.5, width = 0.1) +
+  scale_y_continuous(breaks = pretty_breaks(n = 8), labels = function(x) paste(x, "hogares")) +
+  labs(title = "Distribución de los Hogares con jefatura femenina", 
+  subtitle = "Población del Estado de nayarit",
+  y = "Hogares",
+  x = "")+
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+```
+
+## Gráfico de violín
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(data = datos, aes(x = "", y = hogares_con_jefatura_femenina)) +
+    geom_violin(fill = "lightblue2", color = "cyan4", alpha = 0.8,
+    trim = FALSE,               # No recortar las colas
+    scale = "width", width = 0.8, linewidth = 0.8) +
+    geom_boxplot( width = 0.15, fill = "white", color = "cyan4", alpha = 0.9,
+    outlier.color = "hotpink", outlier.size = 1.5, outlier.alpha = 0.8, notch = FALSE) +
+  stat_summary(fun = median, geom = "point", shape = 21, size = 3, fill = "white",
+  color = "cyan4", stroke = 1.5) +
+  geom_jitter(alpha = 0.2, color = "black", size = 0.8, width = 0.05) +
+  scale_y_continuous(breaks = pretty_breaks(n = 8), labels = function(x) paste(x, "años")) +
+  labs(title = "Hogares con jefatura femenina", 
+  subtitle = "Población del Estado de nayarit",
+  y = "Hogares",
+  x = "")+
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+  
+```
+
+## Q-Q Plot (comparación de cuantiles)
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+
+# Q-Q Plot básico para normalidad
+ggplot(data = datos, aes(sample = hogares_con_jefatura_femenina)) +
+    stat_qq(color = "lightblue2", size = 2, alpha = 0.7) +
+    stat_qq_line(color = "hotpink", linewidth = 1, linetype = "dashed") +
+    scale_x_continuous(name = "Cuantiles Teóricos (Distribución Normal)",
+    breaks = pretty_breaks(n = 6)) +
+    scale_y_continuous(name = "Cuantiles Muestrales (Hogares con jefatura femenina)",
+    breaks = pretty_breaks(n = 6),
+    labels = function(x) paste(x, "hogares")) +
+    labs(title = "Gráfico Q-Q para Normalidad",
+    subtitle = "Hogares con jefatura femenina - Población nayarit") +
+    theme_bw()+
+    theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+  
+
+
+```
+
+## Dot Plot (Gráfico de puntos)
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-height: 16
+#| fig-align: center
+
+ggplot(data = datos, aes(x = hogares_con_jefatura_femenina, y = reorder(NOMGEO, hogares_con_jefatura_femenina))) +
+  geom_point(color = "lightblue2", size = 3, alpha = 0.8) +
+  geom_segment(aes(x = 0, xend = hogares_con_jefatura_femenina, y = NOMGEO, yend = NOMGEO),
+    color = "#BDC3C7", size = 0.5, alpha = 0.7) +
+  scale_x_continuous(
+    name = "Hogares",
+    breaks = pretty_breaks(n = 6),
+    expand = expansion(mult = c(0, 0.1))) +
+  scale_y_discrete(
+    name = "Municipios",
+    expand = expansion(mult = c(0.01, 0.01))
+  ) +
+  labs(
+    title = "Dot Plot - Hogares con jefatura femenina por Municipio",
+    subtitle = "Estado de nayarit") +
+  theme_bw()+
+    theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=9),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+  
+```
+
+# Hogares con jefatura masculina
+
+```{r}
+#| code-fold: true
+#| fig-width: 8
+#| fig-align: center
+
+
+ggplot(datos) +
+  geom_sf(aes(fill = hogares_con_jefatura_masculina), color = "white", size = 0.1) +
+  scale_fill_viridis_c(
+    name = "Hogares con jefatura masculina"
+  ) +
+  labs(
+    title = "Hogares con jefatura masculina de los Municipios de nayarit",
+    caption = "Fuente: INEGI - Marco Geoestadístico"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    plot.caption = element_text(size = 18),
+    legend.position = "right"
+  )
+
+```
+
+## Histograma
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(datos) +
+  geom_histogram(aes(hogares_con_jefatura_masculina), color="black", fill = "blue", boundary=min(datos$hogares_con_jefatura_masculina), binwidth = 1800) +
+  labs(
+    title = "Hogares con jefatura masculina",
+    x = "Hogares", y = "Frecuencia"
+  ) +
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13)
+  )
+
+```
+
+## Gráfica de densidad
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(datos) +
+  geom_density(aes(hogares_con_jefatura_masculina), color="black", fill = "cyan3", alpha=0.6) +
+  labs(
+    title = "Distribución del Hogares con jefatura masculina",
+    x = "Hogares", y = "Densidad"
+  ) +
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13)
+  )
+
+
+```
+
+## Boxplot
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(data = datos, aes(x = "", y = hogares_con_jefatura_masculina)) +
+    geom_boxplot(
+    fill = "lightblue2",           # Color de relleno
+    color = "cyan4",          # Color del borde más oscuro
+    alpha = 0.8,                # Transparencia
+    outlier.color = "hotpink",  # Color rojo para outliers
+    outlier.size = 2.5,         # Tamaño de outliers
+    outlier.alpha = 0.7,        # Transparencia de outliers
+    width = 0.5,                # Ancho del boxplot
+    notch = TRUE,               # Muescas para intervalo de confianza
+    notchwidth = 0.7            # Ancho de las muescas
+  ) +
+  geom_jitter(alpha = 0.3, color = "black", size = 1.5, width = 0.1) +
+  scale_y_continuous(breaks = pretty_breaks(n = 8), labels = function(x) paste(x, "hogares")) +
+  labs(title = "Distribución de los Hogares con jefatura masculina", 
+  subtitle = "Población del Estado de nayarit",
+  y = "Hogares",
+  x = "")+
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+```
+
+## Gráfico de violín
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(data = datos, aes(x = "", y = hogares_con_jefatura_masculina)) +
+    geom_violin(fill = "lightblue2", color = "cyan4", alpha = 0.8,
+    trim = FALSE,               # No recortar las colas
+    scale = "width", width = 0.8, linewidth = 0.8) +
+    geom_boxplot( width = 0.15, fill = "white", color = "cyan4", alpha = 0.9,
+    outlier.color = "hotpink", outlier.size = 1.5, outlier.alpha = 0.8, notch = FALSE) +
+  stat_summary(fun = median, geom = "point", shape = 21, size = 3, fill = "white",
+  color = "cyan4", stroke = 1.5) +
+  geom_jitter(alpha = 0.2, color = "black", size = 0.8, width = 0.05) +
+  scale_y_continuous(breaks = pretty_breaks(n = 8), labels = function(x) paste(x, "hogares")) +
+  labs(title = "Distribución del Hogares con jefatura masculina", 
+  subtitle = "Población del Estado de nayarit",
+  y = "hogares",
+  x = "")+
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+  
+```
+
+## Q-Q Plot (comparación de cuantiles)
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+
+# Q-Q Plot básico para normalidad
+ggplot(data = datos, aes(sample = hogares_con_jefatura_masculina)) +
+    stat_qq(color = "lightblue2", size = 2, alpha = 0.7) +
+    stat_qq_line(color = "hotpink", linewidth = 1, linetype = "dashed") +
+    scale_x_continuous(name = "Cuantiles Teóricos (Distribución Normal)",
+    breaks = pretty_breaks(n = 6)) +
+    scale_y_continuous(name = "Cuantiles Muestrales (Hogares con jefatura masculina)",
+    breaks = pretty_breaks(n = 6),
+    labels = function(x) paste(x, "hogares")) +
+    labs(title = "Gráfico Q-Q para Normalidad",
+    subtitle = "Hogares con jefatura masculina - Población nayarit") +
+    theme_bw()+
+    theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+  
+
+
+```
+
+## Dot Plot (Gráfico de puntos)
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-height: 16
+#| fig-align: center
+
+ggplot(data = datos, aes(x = hogares_con_jefatura_masculina, y = reorder(NOMGEO, hogares_con_jefatura_masculina))) +
+  geom_point(color = "lightblue2", size = 3, alpha = 0.8) +
+  geom_segment(aes(x = 0, xend = hogares_con_jefatura_masculina, y = NOMGEO, yend = NOMGEO),
+    color = "cyan4", size = 0.5, alpha = 0.7) +
+  scale_x_continuous(
+    name = "hogares",
+    breaks = pretty_breaks(n = 6),
+    expand = expansion(mult = c(0, 0.1))) +
+  scale_y_discrete(
+    name = "Municipios",
+    expand = expansion(mult = c(0.01, 0.01))
+  ) +
+  labs(
+    title = "Dot Plot - Hogares con jefatura masculina por Municipio",
+    subtitle = "Estado de nayarit") +
+  theme_bw()+
+    theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=9),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+  
+```
+
+# Tamaño promedio de los hogares con jefe mujer
+
+```{r}
+#| code-fold: true
+#| fig-width: 8
+#| fig-align: center
+
+
+ggplot(datos) +
+  geom_sf(aes(fill = tamano_promedio_de_los_hogares_con_jefe_mujer), color = "white", size = 0.1) +
+  scale_fill_viridis_c(
+    name = "Tamaño promedio de los hogares con jefe mujer"
+  ) +
+  labs(
+    title = "Tamaño promedio de los hogares con jefe mujer de los Municipios de Nayarit",
+    caption = "Fuente: INEGI - Marco Geoestadístico"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    plot.caption = element_text(size = 18),
+    legend.position = "right"
+  )
+
+```
+
+## Histograma
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(datos) +
+  geom_histogram(aes(tamano_promedio_de_los_hogares_con_jefe_mujer), color="black", fill = "deeppink", boundary=min(datos$tamano_promedio_de_los_hogares_con_jefe_mujer), binwidth = 1) +
+  labs(
+    title = "Tamaño promedio de los hogares con jefe mujer",
+    x = "Personas", y = "Frecuencia"
+  ) +
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13)
+  )
+
+```
+
+## Gráfica de densidad
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(datos) +
+  geom_density(aes(tamano_promedio_de_los_hogares_con_jefe_mujer), color="black", fill = "deeppink", alpha=0.6) +
+  labs(
+    title = "Tamaño promedio de los hogares con jefe mujer",
+    x = "Personas", y = "Densidad"
+  ) +
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13)
+  )
+
+
+```
+
+## Boxplot
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(data = datos, aes(x = "", y = tamano_promedio_de_los_hogares_con_jefe_mujer)) +
+    geom_boxplot(
+    fill = "lightblue2",           # Color de relleno
+    color = "cyan4",          # Color del borde más oscuro
+    alpha = 0.8,                # Transparencia
+    outlier.color = "deeppink",  # Color rojo para outliers
+    outlier.size = 2.5,         # Tamaño de outliers
+    outlier.alpha = 0.7,        # Transparencia de outliers
+    width = 0.5,                # Ancho del boxplot
+    notch = TRUE,               # Muescas para intervalo de confianza
+    notchwidth = 0.7            # Ancho de las muescas
+  ) +
+  geom_jitter(alpha = 0.3, color = "black", size = 1.5, width = 0.1) +
+  scale_y_continuous(breaks = pretty_breaks(n = 8), labels = function(x) paste(x, "")) +
+  labs(title = "Distribución del Tamaño promedio de los hogares con jefe mujer", 
+  subtitle = "Población del Estado de nayarit",
+  y = "Personas",
+  x = "")+
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+```
+
+## Gráfico de violín
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(data = datos, aes(x = "", y = tamano_promedio_de_los_hogares_con_jefe_mujer)) +
+    geom_violin(fill = "lightblue2", color = "cyan4", alpha = 0.8,
+    trim = ,               # No recortar las colas
+    scale = "width", width = 0.8, linewidth = 0.8) +
+    geom_boxplot( width = 0.15, fill = "white", color = "cyan4", alpha = 0.9,
+    outlier.color = "deeppink", outlier.size = 1.5, outlier.alpha = 0.8, notch = FALSE) +
+  stat_summary(fun = median, geom = "point", shape = 21, size = 3, fill = "white",
+  color = "cyan4", stroke = 1.5) +
+  geom_jitter(alpha = 0.2, color = "black", size = 0.8, width = 0.05) +
+  scale_y_continuous(breaks = pretty_breaks(n = 8), labels = function(x) paste(x, "")) +
+  labs(title = "Distribución del Tamaño promedio de los hogares con jefe mujer", 
+  subtitle = "Estado de nayarit",
+  y = "Tamaño promedio",
+  x = "")+
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+  
+```
+
+## Q-Q Plot (comparación de cuantiles)
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+
+# Q-Q Plot básico para normalidad
+ggplot(data = datos, aes(sample = tamano_promedio_de_los_hogares_con_jefe_mujer)) +
+    stat_qq(color = "lightblue2", size = 2, alpha = 0.7) +
+    stat_qq_line(color = "deeppink", linewidth = 1, linetype = "dashed") +
+    scale_x_continuous(name = "Cuantiles Teóricos (Distribución Normal)",
+    breaks = pretty_breaks(n = 6)) +
+    scale_y_continuous(name = "Cuantiles Muestrales (Personas)",
+    breaks = pretty_breaks(n = 6),
+    labels = function(x) paste(x, "")) +
+    labs(title = "Gráfico Q-Q para Normalidad",
+    subtitle = "Tamaño promedio de los hogares con jefe mujer - Nayarit") +
+    theme_bw()+
+    theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+  
+```
+
+## Dot Plot (Gráfico de puntos)
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-height: 16
+#| fig-align: center
+
+ggplot(data = datos, aes(x = tamano_promedio_de_los_hogares_con_jefe_mujer , y = reorder(NOMGEO, tamano_promedio_de_los_hogares_con_jefe_mujer))) +
+  geom_point(color = "lightblue2", size = 3, alpha = 0.8) +
+  geom_segment(aes(x = 0, xend = tamano_promedio_de_los_hogares_con_jefe_mujer, y = NOMGEO, yend = NOMGEO),
+    color = "gray", size = 0.5, alpha = 0.7) +
+  scale_x_continuous(
+    name = "Personas",
+    breaks = pretty_breaks(n = 6),
+    expand = expansion(mult = c(0, 0.1))) +
+  scale_y_discrete(
+    name = "Municipios",
+    expand = expansion(mult = c(0.01, 0.01))
+  ) +
+  labs(
+    title = "Dot Plot - Tamaño promedio de los hogares con jefe mujer",
+    subtitle = "Estado de nayarit") +
+  theme_bw()+
+    theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=9),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+```
+
+# Tamaño promedio de los hogares con jefe hombre
+
+```{r}
+#| code-fold: true
+#| fig-width: 8
+#| fig-align: center
+
+
+ggplot(datos) +
+  geom_sf(aes(fill = tamano_promedio_de_los_hogares_con_jefe_hombre), color = "white", size = 0.1) +
+  scale_fill_viridis_c(
+    name = "Tamaño promedio de los hogares con jefe hombre"
+  ) +
+  labs(
+    title = "Tamaño promedio de los hogares con jefe hombre de los Municipios de nayarit",
+    caption = "Fuente: INEGI - Marco Geoestadístico"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    plot.caption = element_text(size = 18),
+    legend.position = "right"
+  )
+
+```
+
+## Histograma
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(datos) +
+  geom_histogram(aes(tamano_promedio_de_los_hogares_con_jefe_hombre), color="black", fill = "navyblue", boundary=min(datos$tamano_promedio_de_los_hogares_con_jefe_hombre), binwidth = 1) +
+  labs(
+    title = "Tamaño promedio de los hogares con jefe hombre",
+    x = "Personas", y = "Frecuencia"
+  ) +
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13)
+  )
+
+```
+
+## Gráfica de densidad
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(datos) +
+  geom_density(aes(tamano_promedio_de_los_hogares_con_jefe_hombre), color="black", fill = "navyblue", alpha=0.6) +
+  labs(
+    title = "Tamaño prom. de los hogares con jefe hombre",
+    x = "Personas", y = "Densidad"
+  ) +
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13)
+  )
+
+```
+
+## Boxplot
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(data = datos, aes(x = "", y = tamano_promedio_de_los_hogares_con_jefe_hombre)) +
+    geom_boxplot(
+    fill = "lightblue2",           # Color de relleno
+    color = "navy",          # Color del borde más oscuro
+    alpha = 0.8,                # Transparencia
+    outlier.color = "rosybrown3",  # Color rojo para outliers
+    outlier.size = 2.5,         # Tamaño de outliers
+    outlier.alpha = 0.7,        # Transparencia de outliers
+    width = 0.5,                # Ancho del boxplot
+    notch = TRUE,               # Muescas para intervalo de confianza
+    notchwidth = 0.7            # Ancho de las muescas
+  ) +
+  geom_jitter(alpha = 0.3, color = "black", size = 1.5, width = 0.1) +
+  scale_y_continuous(breaks = pretty_breaks(n = 8), labels = function(x) paste(x, "")) +
+  labs(title = "Tamaño prom. de los hogares con jefe hombre", 
+  subtitle = "Población del Estado de nayarit",
+  y = "Personas",
+  x = "")+
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+```
+
+## Gráfico de violín
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(data = datos, aes(x = "", y = tamano_promedio_de_los_hogares_con_jefe_hombre)) +
+    geom_violin(fill = "lightblue2", color = "navy", alpha = 0.8,
+    trim = ,               # No recortar las colas
+    scale = "width", width = 0.8, linewidth = 0.8) +
+    geom_boxplot( width = 0.15, fill = "white", color = "navy", alpha = 0.9,
+    outlier.color = "deeppink", outlier.size = 1.5, outlier.alpha = 0.8, notch = FALSE) +
+  stat_summary(fun = median, geom = "point", shape = 21, size = 3, fill = "white",
+  color = "navy", stroke = 1.5) +
+  geom_jitter(alpha = 0.2, color = "navy", size = 0.8, width = 0.05) +
+  scale_y_continuous(breaks = pretty_breaks(n = 8), labels = function(x) paste(x, "")) +
+  labs(title = "Tamaño promedio", 
+  subtitle = "Estado de nayarit",
+  y = "Personas",
+  x = "")+
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+  
+```
+
+## Q-Q Plot (comparación de cuantiles)
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+
+# Q-Q Plot básico para normalidad
+ggplot(data = datos, aes(sample = tamano_promedio_de_los_hogares_con_jefe_hombre)) +
+    stat_qq(color = "lightblue2", size = 2, alpha = 0.7) +
+    stat_qq_line(color = "deeppink", linewidth = 1, linetype = "dashed") +
+    scale_x_continuous(name = "Cuantiles Teóricos (Distribución Normal)",
+    breaks = pretty_breaks(n = 6)) +
+    scale_y_continuous(name = "Cuantiles Muestrales",
+    breaks = pretty_breaks(n = 6),
+    labels = function(x) paste(x, "")) +
+    labs(title = "Gráfico Q-Q para Normalidad",
+    subtitle = "Tamaño promedio de los hogares con jefe hombre - Nayarit") +
+    theme_bw()+
+    theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+  
+```
+
+## Dot Plot (Gráfico de puntos)
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-height: 16
+#| fig-align: center
+
+ggplot(data = datos, aes(x = tamano_promedio_de_los_hogares_con_jefe_hombre, y = reorder(NOMGEO, tamano_promedio_de_los_hogares_con_jefe_hombre))) +
+  geom_point(color = "lightblue2", size = 3, alpha = 0.8) +
+  geom_segment(aes(x = 0, xend = tamano_promedio_de_los_hogares_con_jefe_hombre, y = NOMGEO, yend = NOMGEO),
+    color = "gray", size = 0.5, alpha = 0.7) +
+  scale_x_continuous(
+    name = "Personas",
+    breaks = pretty_breaks(n = 6),
+    expand = expansion(mult = c(0, 0.1))) +
+  scale_y_discrete(
+    name = "Municipios",
+    expand = expansion(mult = c(0.01, 0.01))
+  ) +
+  labs(
+    title = "Dot Plot - Tamaño promedio de los hogares con jefe hombre",
+    subtitle = "Estado de nayarit") +
+  theme_bw()+
+    theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=9),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+  
+```
+
+# Relación hombres-mujeres
+
+```{r}
+#| code-fold: true
+#| fig-width: 8
+#| fig-align: center
+
+
+ggplot(datos) +
+  geom_sf(aes(fill = relacion_hombres_mujeres), color = "white", size = 0.1) +
+  scale_fill_viridis_c(
+    name = "Hombres por cada 100 mujeres"
+  ) +
+  labs(
+    title = "Relación hombres-mujeres de los Municipios de nayarit",
+    caption = "Fuente: INEGI - Marco Geoestadístico"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    plot.caption = element_text(size = 18),
+    legend.position = "right"
+  )
+```
+
+## Histograma
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(datos) +
+  geom_histogram(aes(relacion_hombres_mujeres), color="black", fill = "maroon", boundary=min(datos$relacion_hombres_mujeres), binwidth = 2) +
+  labs(
+    title = "Relación hombres-mujeres",
+    x = "hombres por cada 100 mujeres", y = "Frecuencia"
+  ) +
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13)
+  )
+
+```
+
+## Gráfica de densidad
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(datos) +
+  geom_density(aes(relacion_hombres_mujeres), color="black", fill = "maroon", alpha=0.6) +
+  labs(
+    title = "Relación hombres-mujeres",
+    x = "hombres por cada 100 mujeres", y = "Densidad"
+  ) +
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13)
+  )
+
+```
+
+## Boxplot
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(data = datos, aes(x = "", y = relacion_hombres_mujeres)) +
+    geom_boxplot(
+    fill = "lightblue2",           # Color de relleno
+    color = "cyan4",          # Color del borde más oscuro
+    alpha = 0.8,                # Transparencia
+    outlier.color = "maroon",  # Color rojo para outliers
+    outlier.size = 2.5,         # Tamaño de outliers
+    outlier.alpha = 0.7,        # Transparencia de outliers
+    width = 0.5,                # Ancho del boxplot
+    notch = TRUE,               # Muescas para intervalo de confianza
+    notchwidth = 0.7            # Ancho de las muescas
+  ) +
+  geom_jitter(alpha = 0.3, color = "black", size = 1.5, width = 0.1) +
+  scale_y_continuous(breaks = pretty_breaks(n = 8), labels = function(x) paste(x, "hombres")) +
+  labs(title = "Distribución de la Relación hombres-mujeres", 
+  subtitle = "Población del Estado de nayarit",
+  y = "hombres por cada 100 mujeres",
+  x = "")+
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+```
+
+## Gráfico de violín
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(data = datos, aes(x = "", y = relacion_hombres_mujeres)) +
+    geom_violin(fill = "lightblue2", color = "cyan4", alpha = 0.8,
+    trim = ,               # No recortar las colas
+    scale = "width", width = 0.8, linewidth = 0.8) +
+    geom_boxplot( width = 0.15, fill = "white", color = "cyan4", alpha = 0.9,
+    outlier.color = "maroon", outlier.size = 1.5, outlier.alpha = 0.8, notch = FALSE) +
+  stat_summary(fun = median, geom = "point", shape = 21, size = 3, fill = "white",
+  color = "cyan4", stroke = 1.5) +
+  geom_jitter(alpha = 0.2, color = "black", size = 0.8, width = 0.05) +
+  scale_y_continuous(breaks = pretty_breaks(n = 8), labels = function(x) paste(x, "")) +
+  labs(title = "Relación Hombres-mujeres", 
+  subtitle = "Estado de nayarit",
+  y = "Hombres por cada 100 mujeres",
+  x = "")+
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "black", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+```
+
+## Q-Q Plot (comparación de cuantiles)
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+
+# Q-Q Plot básico para normalidad
+ggplot(data = datos, aes(sample = relacion_hombres_mujeres)) +
+    stat_qq(color = "lightblue2", size = 2, alpha = 0.7) +
+    stat_qq_line(color = "maroon", linewidth = 1, linetype = "dashed") +
+    scale_x_continuous(name = "Cuantiles Teóricos (Distribución Normal)",
+    breaks = pretty_breaks(n = 6)) +
+    scale_y_continuous(name = "Cuantiles Muestrales (Hombres por cada 100 mujeres)",
+    breaks = pretty_breaks(n = 6),
+    labels = function(x) paste(x, "")) +
+    labs(title = "Gráfico Q-Q para Normalidad",
+    subtitle = "Relación hombres-mujeres - Nayarit") +
+    theme_bw()+
+    theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+```
+
+## Dot Plot (Gráfico de puntos)
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-height: 16
+#| fig-align: center
+
+ggplot(data = datos, aes(x = relacion_hombres_mujeres, y = reorder(NOMGEO, relacion_hombres_mujeres))) +
+  geom_point(color = "lightblue2", size = 3, alpha = 0.8) +
+  geom_segment(aes(x = 0, xend = relacion_hombres_mujeres, y = NOMGEO, yend = NOMGEO),
+    color = "gray", size = 0.5, alpha = 0.7) +
+  scale_x_continuous(
+    name = "Población",
+    breaks = pretty_breaks(n = 6),
+    expand = expansion(mult = c(0, 0.1))) +
+  scale_y_discrete(
+    name = "Municipios",
+    expand = expansion(mult = c(0.01, 0.01))
+  ) +
+  labs(
+    title = "Dot Plot - Hombres por cada 100 mujeres",
+    subtitle = "Estado de nayarit") +
+  theme_bw()+
+    theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=9),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+```
+
+# Relación de dependencia
+
+```{r}
+#| code-fold: true
+#| fig-width: 8
+#| fig-align: center
+
+
+ggplot(datos) +
+  geom_sf(aes(fill = relacion_de_dependencia), color = "white", size = 0.1) +
+  scale_fill_viridis_c(
+    name = "Porcentaje de Relación de dependencia"
+  ) +
+  labs(
+    title = "Relación de dependencia de los Municipios de nayarit",
+    caption = "Fuente: INEGI - Marco Geoestadístico"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    plot.caption = element_text(size = 18),
+    legend.position = "right"
+  )
+```
+
+## Histograma
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(datos) +
+  geom_histogram(aes(relacion_de_dependencia), color="black", fill = "lightpink", boundary=min(datos$relacion_de_dependencia), binwidth = 2) +
+  labs(
+    title = "Relación de dependencia",
+    x = "%", y = "Frecuencia"
+  ) +
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13)
+  )
+```
+
+## Gráfica de densidad
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(datos) +
+  geom_density(aes(relacion_de_dependencia), color="black", fill = "lightpink", alpha=0.6) +
+  labs(
+    title = "Relación de dependencia (%)",
+    x = "Porcentaje (%)", y = "Densidad"
+  ) +
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13)
+  )
+```
+
+## Boxplot
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(data = datos, aes(x = "", y = relacion_de_dependencia)) +
+    geom_boxplot(
+    fill = "lightblue2",           # Color de relleno
+    color = "cyan4",          # Color del borde más oscuro
+    alpha = 0.8,                # Transparencia
+    outlier.color = "lightpink",  # Color rojo para outliers
+    outlier.size = 2.5,         # Tamaño de outliers
+    outlier.alpha = 0.7,        # Transparencia de outliers
+    width = 0.5,                # Ancho del boxplot
+    notch = TRUE,               # Muescas para intervalo de confianza
+    notchwidth = 0.7            # Ancho de las muescas
+  ) +
+  geom_jitter(alpha = 0.3, color = "black", size = 1.5, width = 0.1) +
+  scale_y_continuous(breaks = pretty_breaks(n = 8), labels = function(x) paste(x, "")) +
+  labs(title = "Relación de dependencia", 
+  subtitle = "Población del Estado de nayarit",
+  y = "Porcentaje (%)",
+  x = "")+
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+```
+
+## Gráfico de violín
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+ggplot(data = datos, aes(x = "", y = relacion_de_dependencia)) +
+    geom_violin(fill = "lightblue2", color = "cyan4", alpha = 0.8,
+    trim = ,               # No recortar las colas
+    scale = "width", width = 0.8, linewidth = 0.8) +
+    geom_boxplot( width = 0.15, fill = "white", color = "cyan4", alpha = 0.9,
+    outlier.color = "lightpink", outlier.size = 1.5, outlier.alpha = 0.8, notch = FALSE) +
+  stat_summary(fun = median, geom = "point", shape = 21, size = 3, fill = "white",
+  color = "cyan4", stroke = 1.5) +
+  geom_jitter(alpha = 0.2, color = "black", size = 0.8, width = 0.05) +
+  scale_y_continuous(breaks = pretty_breaks(n = 8), labels = function(x) paste(x, "%")) +
+  labs(title = "Relación de dependencia (%)", 
+  subtitle = "Estado de nayarit",
+  y = "Porcentaje (%)",
+  x = "")+
+  theme_bw()+
+  theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+```
+
+## Q-Q Plot (comparación de cuantiles)
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-align: center
+
+
+# Q-Q Plot básico para normalidad
+ggplot(data = datos, aes(sample = relacion_de_dependencia)) +
+    stat_qq(color = "lightblue2", size = 2, alpha = 0.7) +
+    stat_qq_line(color = "lightpink", linewidth = 1, linetype = "dashed") +
+    scale_x_continuous(name = "Cuantiles Teóricos (Distribución Normal)",
+    breaks = pretty_breaks(n = 6)) +
+    scale_y_continuous(name = "Cuantiles Muestrales (Porcentaje %)",
+    breaks = pretty_breaks(n = 6),
+    labels = function(x) paste(x, "%")) +
+    labs(title = "Gráfico Q-Q para Normalidad",
+    subtitle = "Relación de dependencia (%) - nayarit") +
+    theme_bw()+
+    theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=12),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+```
+
+## Dot Plot (Gráfico de puntos)
+
+```{r}
+#| code-fold: true
+#| fig-width: 7
+#| fig-height: 16
+#| fig-align: center
+
+ggplot(data = datos, aes(x = relacion_de_dependencia, y = reorder(NOMGEO, relacion_de_dependencia))) +
+  geom_point(color = "lightblue", size = 3, alpha = 0.8) +
+  geom_segment(aes(x = 0, xend = relacion_de_dependencia, y = NOMGEO, yend = NOMGEO),
+    color = "gray", size = 0.5, alpha = 0.7) +
+  scale_x_continuous(
+    name = "Población",
+    breaks = pretty_breaks(n = 6),
+    expand = expansion(mult = c(0, 0.1))) +
+  scale_y_discrete(
+    name = "Municipios",
+    expand = expansion(mult = c(0.01, 0.01))
+  ) +
+  labs(
+    title = "Dot Plot - Relación de dependencia",
+    subtitle = "Estado de nayarit") +
+  theme_bw()+
+    theme(
+    legend.title = element_text(size=13, face="bold"),
+    legend.text = element_text(size=13),
+    plot.title = element_text(size=15, face="bold"),
+    plot.subtitle = element_text(size=13),
+    axis.text.x=element_text(size=12),
+    axis.text.y=element_text(size=9),
+    axis.title.x = element_text(face="bold", size=13),
+    axis.title.y = element_text(face="bold", size=13),
+    panel.grid.major.y = element_line(color = "gray", linewidth = 0.5,
+      linetype = "dashed"),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.background = element_rect(fill = "#FAFAFA", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+```
